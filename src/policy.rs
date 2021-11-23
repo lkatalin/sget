@@ -167,7 +167,53 @@ mod tests {
         let pub_key_bytes = res_x509.public_key().raw.to_owned();
         let pub_key = VerifyingKey::<p256::NistP256>::from_public_key_der(&pub_key_bytes[..]).map_err(|e| anyhow!("Cannot load key: {:?}", e));
         let signature = &policy.signatures[0].sig;
-        let outcome = verify_signature(&pub_key.unwrap(),&signature,serde_json::to_string(&policy.signed).unwrap().as_bytes());
+        let msg = 
+        r#"{
+            "_type": "root",
+            "consistent_snapshot": true,
+            "expires": "2022-01-08T15:33:26Z",
+            "keys": {
+              "5cc3f87d85b1a8f9ec3a4f4e552af9d6926381f87774b4a098cc4dd10498634c": {
+                "keyid_hash_algorithms": [
+                  "sha256",
+                  "sha512"
+                ],
+                "keytype": "sigstore-oidc",
+                "keyval": {
+                  "identity": "lhinds@redhat.com",
+                  "issuer": ""
+                },
+                "scheme": "https://fulcio.sigstore.dev"
+              },
+              "a27a1b676cce5db68748c1a34f3456edb7c800fc8a7a3303330b413ce2cb4e3e": {
+                "keyid_hash_algorithms": [
+                  "sha256",
+                  "sha512"
+                ],
+                "keytype": "sigstore-oidc",
+                "keyval": {
+                  "identity": "kim@example.com",
+                  "issuer": ""
+                },
+                "scheme": "https://fulcio.sigstore.dev"
+              }
+            },
+            "namespace": "ghcr.io/lukehinds/cosign123",
+            "roles": {
+              "root": {
+                "keyids": [
+                  "5cc3f87d85b1a8f9ec3a4f4e552af9d6926381f87774b4a098cc4dd10498634c",
+                  "a27a1b676cce5db68748c1a34f3456edb7c800fc8a7a3303330b413ce2cb4e3e"
+                ],
+                "threshold": 2
+              }
+            },
+            "spec_version": "1.0",
+            "version": 1
+          }"#;
+
+        let outcome = verify_signature(&pub_key.unwrap(),&signature,&msg.as_bytes());
+        //let outcome = verify_signature(&pub_key.unwrap(),&signature,serde_json::to_string(&policy.signed).unwrap().as_bytes());
         assert!(outcome.is_ok());
         //assert_eq!(1,1);
     }

@@ -1,0 +1,56 @@
+{
+    "_type": "root",
+    "consistent_snapshot": true,
+    "expires": "2022-02-23T20:29:00Z",
+    "keys": {
+        "0dbdcea45bc3fa9091551690b89caa8bc322546b72fc6c766ccfa2be60547de6": {
+            "keyid_hash_algorithms": [
+                "sha256",
+                "sha512"
+            ],
+            "keytype": "sigstore-oidc",
+            "keyval": {
+                "identity": "jyotsnap@bu.edu",
+                "issuer": ""
+            },
+            "scheme": "https://fulcio.sigstore.dev"
+        },
+        "db379d3746fe29d97f8e2dee8381d535a4b579d3ecf619613738cf138dadec0a": {
+            "keyid_hash_algorithms": [
+                "sha256",
+                "sha512"
+            ],
+            "keytype": "sigstore-oidc",
+            "keyval": {
+                "identity": "jpenumak@redhat.com",
+                "issuer": ""
+            },
+            "scheme": "https://fulcio.sigstore.dev"
+        },
+        "e71beb853fb177ecd4248f1fe8c6e7c31476b8ff00842d53ecfff9332b7c70be": {
+            "keyid_hash_algorithms": [
+                "sha256",
+                "sha512"
+            ],
+            "keytype": "sigstore-oidc",
+            "keyval": {
+                "identity": "lsturman@redhat.com",
+                "issuer": ""
+            },
+            "scheme": "https://fulcio.sigstore.dev"
+        }
+    },
+    "namespace": "ghcr.io/jyotsna-penumaka/sigstore-kubecon",
+    "roles": {
+        "root": {
+            "keyids": [
+                "e71beb853fb177ecd4248f1fe8c6e7c31476b8ff00842d53ecfff9332b7c70be",
+                "db379d3746fe29d97f8e2dee8381d535a4b579d3ecf619613738cf138dadec0a",
+                "0dbdcea45bc3fa9091551690b89caa8bc322546b72fc6c766ccfa2be60547de6"
+            ],
+            "threshold": 2
+        }
+    },
+    "spec_version": "1.0",
+    "version": 1
+}

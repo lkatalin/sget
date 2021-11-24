@@ -59,7 +59,7 @@ pub struct Signed {
     // The uncommended code will compile, but the unit test will fail because of the above
 //    pub roles: Vec<RoleKeys>,
 //    pub roles: HashMap<String, String>,
-    pub roles: HashMap<String, RoleData>,
+    pub roles: HashMap<RoleType, RoleData>,
     pub spec_version: String,
     pub version: NonZeroU64,
 }
@@ -78,13 +78,13 @@ pub struct RoleData {
     pub threshold: NonZeroU64,
 }
 
-/*#[derive(PartialEq, Eq, Serialize, Deserialize, Debug)]
+#[derive(PartialEq, Eq, Serialize, Deserialize, Debug)]
 /// The type of metadata role.
-pub enum Role {
+pub enum RoleType {
     /// The root role delegates trust to specific keys trusted for all other top-level roles used in
     /// the system.
     Root(String),
-}*/
+}
 
 //derive_display_from_serialize!(RoleType);
 //derive_fromstr_from_deserialize!(RoleType);

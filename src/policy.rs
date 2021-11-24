@@ -1,4 +1,4 @@
-use serde_json::Value;
+use serde_json::{Value, value::RawValue};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_plain::{derive_display_from_serialize, derive_fromstr_from_deserialize};
@@ -13,7 +13,7 @@ use anyhow::{anyhow, Result};
 use ecdsa::signature::Verifier;
 
 // A signed root policy object
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Policy {
     // A list of signatures.
     pub signatures: Vec<Signature>,
@@ -21,49 +21,63 @@ pub struct Policy {
     pub signed: Root,
 }
 
-// A signature and the key ID and certificate that made it.
 #[derive(Serialize, Deserialize)]
+struct Input<'a> {
+    #[serde(borrow)]
+    pub signatures: &'a RawValue,
+    #[serde(borrow)]
+    pub signed: &'a RawValue,
+}
+
+#[derive(Serialize)]
+struct Output<'a> {
+    pub info: (&'a RawValue, &'a RawValue),
+}
+
+// A signature and the key ID and certificate that made it.
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Signature {
+    // The base64 encoded certificate that was used to create the signature.
+    pub cert: String,
     // The hex encoded key ID that made this signature.
     pub keyid: String,
     // The base64 encoded signature of the canonical JSON of the root policy.
     pub sig: String,
-    // The base64 encoded certificate that was used to create the signature.
-    pub cert: String,
 }
 
 // The root policy indicated the trusted root keys.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Root {
-    pub spec_version: String,
-    pub version: NonZeroU64,
-    pub namespace: String,
-    pub expires: DateTime<Utc>,
     pub consistent_snapshot: bool,
+    pub expires: DateTime<Utc>,
+    pub keys: HashMap<String, Key>,
+    pub namespace: String,
     // TODO: better define RoleType, right now it doesn't match the actual data
     // The uncommended code will compile, but the unit test will fail because of the above
-    //pub roles: HashMap<RoleType, RoleKeys>,
-    pub keys: HashMap<String, Key>,
+//    pub roles: Vec<RoleKeys>,
+//    pub roles: HashMap<String, String>,
+    pub spec_version: String,
+    pub version: NonZeroU64,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(PartialEq, Eq, Serialize, Deserialize, Debug)]
 pub struct RoleKeys {
     /// The key IDs used for the role.
-    pub keyids: Vec<String>,
+    pub keyids: HashMap<String, String>,
     /// The threshold of signatures required to validate the role.
     pub threshold: NonZeroU64,
 }
 
-#[derive(PartialEq, Eq, Hash, Serialize, Deserialize)]
-/// The type of metadata role.
-pub enum RoleType {
-    /// The root role delegates trust to specific keys trusted for all other top-level roles used in
-    /// the system.
-    Root,
-}
+//#[derive(PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
+///// The type of metadata role.
+//pub enum RoleType {
+//    /// The root role delegates trust to specific keys trusted for all other top-level roles used in
+//    /// the system.
+//    RootRole(RootRoleKeys),
+//}
 
-derive_display_from_serialize!(RoleType);
-derive_fromstr_from_deserialize!(RoleType);
+//derive_display_from_serialize!(RoleType);
+//derive_fromstr_from_deserialize!(RoleType);
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(tag = "keytype")]
@@ -125,6 +139,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn deserialize() {
+        let mut fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        fixture.push("tests/test_data/policy_good.json");
+        let raw_json = std::fs::read(fixture).expect("Cannot read test file");
+        let policy: Policy = serde_json::from_slice(&raw_json).expect("Cannot deserialize policy");
+    }
+
+    #[test]
     fn parse_script_success() {
         let mut fixture = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         fixture.push("tests/test_data/policy_good.json");
@@ -162,6 +184,7 @@ mod tests {
         fixture.push("tests/test_data/policy_good.json");
         let raw_json = std::fs::read(fixture).expect("Cannot read test file");
         let policy: Policy = serde_json::from_slice(&raw_json).expect("Cannot deserialize Policy");
+        let input: Input = serde_json::from_slice(&raw_json).expect("Could not create Input");
         let cert_64 = &policy.signatures[0].cert;
         let cert = base64::decode(cert_64).unwrap();
         let (_, pem) = parse_x509_pem(&cert)
@@ -172,74 +195,47 @@ mod tests {
         let pub_key = VerifyingKey::<p256::NistP256>::from_public_key_der(&pub_key_bytes[..]).map_err(|e| anyhow!("Cannot load key: {:?}", e));
         let signature = &policy.signatures[0].sig;
         let msg_bytes = [123, 10, 9, 9, 34, 95, 116, 121, 112, 101, 34, 58, 32, 34, 114, 111, 111, 116, 34, 44, 10, 9, 9, 34, 99, 111, 110, 115, 105, 115, 116, 101, 110, 116, 95, 115, 110, 97, 112, 115, 104, 111, 116, 34, 58, 32, 116, 114, 117, 101, 44, 10, 9, 9, 34, 101, 120, 112, 105, 114, 101, 115, 34, 58, 32, 34, 50, 48, 50, 50, 45, 48, 50, 45, 50, 51, 84, 50, 48, 58, 50, 57, 58, 48, 48, 90, 34, 44, 10, 9, 9, 34, 107, 101, 121, 115, 34, 58, 32, 123, 10, 9, 9, 9, 34, 48, 100, 98, 100, 99, 101, 97, 52, 53, 98, 99, 51, 102, 97, 57, 48, 57, 49, 53, 53, 49, 54, 57, 48, 98, 56, 57, 99, 97, 97, 56, 98, 99, 51, 50, 50, 53, 52, 54, 98, 55, 50, 102, 99, 54, 99, 55, 54, 54, 99, 99, 102, 97, 50, 98, 101, 54, 48, 53, 52, 55, 100, 101, 54, 34, 58, 32, 123, 10, 9, 9, 9, 9, 34, 107, 101, 121, 105, 100, 95, 104, 97, 115, 104, 95, 97, 108, 103, 111, 114, 105, 116, 104, 109, 115, 34, 58, 32, 91, 10, 9, 9, 9, 9, 9, 34, 115, 104, 97, 50, 53, 54, 34, 44, 10, 9, 9, 9, 9, 9, 34, 115, 104, 97, 53, 49, 50, 34, 10, 9, 9, 9, 9, 93, 44, 10, 9, 9, 9, 9, 34, 107, 101, 121, 116, 121, 112, 101, 34, 58, 32, 34, 115, 105, 103, 115, 116, 111, 114, 101, 45, 111, 105, 100, 99, 34, 44, 10, 9, 9, 9, 9, 34, 107, 101, 121, 118, 97, 108, 34, 58, 32, 123, 10, 9, 9, 9, 9, 9, 34, 105, 100, 101, 110, 116, 105, 116, 121, 34, 58, 32, 34, 106, 121, 111, 116, 115, 110, 97, 112, 64, 98, 117, 46, 101, 100, 117, 34, 44, 10, 9, 9, 9, 9, 9, 34, 105, 115, 115, 117, 101, 114, 34, 58, 32, 34, 34, 10, 9, 9, 9, 9, 125, 44, 10, 9, 9, 9, 9, 34, 115, 99, 104, 101, 109, 101, 34, 58, 32, 34, 104, 116, 116, 112, 115, 58, 47, 47, 102, 117, 108, 99, 105, 111, 46, 115, 105, 103, 115, 116, 111, 114, 101, 46, 100, 101, 118, 34, 10, 9, 9, 9, 125, 44, 10, 9, 9, 9, 34, 100, 98, 51, 55, 57, 100, 51, 55, 52, 54, 102, 101, 50, 57, 100, 57, 55, 102, 56, 101, 50, 100, 101, 101, 56, 51, 56, 49, 100, 53, 51, 53, 97, 52, 98, 53, 55, 57, 100, 51, 101, 99, 102, 54, 49, 57, 54, 49, 51, 55, 51, 56, 99, 102, 49, 51, 56, 100, 97, 100, 101, 99, 48, 97, 34, 58, 32, 123, 10, 9, 9, 9, 9, 34, 107, 101, 121, 105, 100, 95, 104, 97, 115, 104, 95, 97, 108, 103, 111, 114, 105, 116, 104, 109, 115, 34, 58, 32, 91, 10, 9, 9, 9, 9, 9, 34, 115, 104, 97, 50, 53, 54, 34, 44, 10, 9, 9, 9, 9, 9, 34, 115, 104, 97, 53, 49, 50, 34, 10, 9, 9, 9, 9, 93, 44, 10, 9, 9, 9, 9, 34, 107, 101, 121, 116, 121, 112, 101, 34, 58, 32, 34, 115, 105, 103, 115, 116, 111, 114, 101, 45, 111, 105, 100, 99, 34, 44, 10, 9, 9, 9, 9, 34, 107, 101, 121, 118, 97, 108, 34, 58, 32, 123, 10, 9, 9, 9, 9, 9, 34, 105, 100, 101, 110, 116, 105, 116, 121, 34, 58, 32, 34, 106, 112, 101, 110, 117, 109, 97, 107, 64, 114, 101, 100, 104, 97, 116, 46, 99, 111, 109, 34, 44, 10, 9, 9, 9, 9, 9, 34, 105, 115, 115, 117, 101, 114, 34, 58, 32, 34, 34, 10, 9, 9, 9, 9, 125, 44, 10, 9, 9, 9, 9, 34, 115, 99, 104, 101, 109, 101, 34, 58, 32, 34, 104, 116, 116, 112, 115, 58, 47, 47, 102, 117, 108, 99, 105, 111, 46, 115, 105, 103, 115, 116, 111, 114, 101, 46, 100, 101, 118, 34, 10, 9, 9, 9, 125, 44, 10, 9, 9, 9, 34, 101, 55, 49, 98, 101, 98, 56, 53, 51, 102, 98, 49, 55, 55, 101, 99, 100, 52, 50, 52, 56, 102, 49, 102, 101, 56, 99, 54, 101, 55, 99, 51, 49, 52, 55, 54, 98, 56, 102, 102, 48, 48, 56, 52, 50, 100, 53, 51, 101, 99, 102, 102, 102, 57, 51, 51, 50, 98, 55, 99, 55, 48, 98, 101, 34, 58, 32, 123, 10, 9, 9, 9, 9, 34, 107, 101, 121, 105, 100, 95, 104, 97, 115, 104, 95, 97, 108, 103, 111, 114, 105, 116, 104, 109, 115, 34, 58, 32, 91, 10, 9, 9, 9, 9, 9, 34, 115, 104, 97, 50, 53, 54, 34, 44, 10, 9, 9, 9, 9, 9, 34, 115, 104, 97, 53, 49, 50, 34, 10, 9, 9, 9, 9, 93, 44, 10, 9, 9, 9, 9, 34, 107, 101, 121, 116, 121, 112, 101, 34, 58, 32, 34, 115, 105, 103, 115, 116, 111, 114, 101, 45, 111, 105, 100, 99, 34, 44, 10, 9, 9, 9, 9, 34, 107, 101, 121, 118, 97, 108, 34, 58, 32, 123, 10, 9, 9, 9, 9, 9, 34, 105, 100, 101, 110, 116, 105, 116, 121, 34, 58, 32, 34, 108, 115, 116, 117, 114, 109, 97, 110, 64, 114, 101, 100, 104, 97, 116, 46, 99, 111, 109, 34, 44, 10, 9, 9, 9, 9, 9, 34, 105, 115, 115, 117, 101, 114, 34, 58, 32, 34, 34, 10, 9, 9, 9, 9, 125, 44, 10, 9, 9, 9, 9, 34, 115, 99, 104, 101, 109, 101, 34, 58, 32, 34, 104, 116, 116, 112, 115, 58, 47, 47, 102, 117, 108, 99, 105, 111, 46, 115, 105, 103, 115, 116, 111, 114, 101, 46, 100, 101, 118, 34, 10, 9, 9, 9, 125, 10, 9, 9, 125, 44, 10, 9, 9, 34, 110, 97, 109, 101, 115, 112, 97, 99, 101, 34, 58, 32, 34, 103, 104, 99, 114, 46, 105, 111, 47, 106, 121, 111, 116, 115, 110, 97, 45, 112, 101, 110, 117, 109, 97, 107, 97, 47, 115, 105, 103, 115, 116, 111, 114, 101, 45, 107, 117, 98, 101, 99, 111, 110, 34, 44, 10, 9, 9, 34, 114, 111, 108, 101, 115, 34, 58, 32, 123, 10, 9, 9, 9, 34, 114, 111, 111, 116, 34, 58, 32, 123, 10, 9, 9, 9, 9, 34, 107, 101, 121, 105, 100, 115, 34, 58, 32, 91, 10, 9, 9, 9, 9, 9, 34, 101, 55, 49, 98, 101, 98, 56, 53, 51, 102, 98, 49, 55, 55, 101, 99, 100, 52, 50, 52, 56, 102, 49, 102, 101, 56, 99, 54, 101, 55, 99, 51, 49, 52, 55, 54, 98, 56, 102, 102, 48, 48, 56, 52, 50, 100, 53, 51, 101, 99, 102, 102, 102, 57, 51, 51, 50, 98, 55, 99, 55, 48, 98, 101, 34, 44, 10, 9, 9, 9, 9, 9, 34, 100, 98, 51, 55, 57, 100, 51, 55, 52, 54, 102, 101, 50, 57, 100, 57, 55, 102, 56, 101, 50, 100, 101, 101, 56, 51, 56, 49, 100, 53, 51, 53, 97, 52, 98, 53, 55, 57, 100, 51, 101, 99, 102, 54, 49, 57, 54, 49, 51, 55, 51, 56, 99, 102, 49, 51, 56, 100, 97, 100, 101, 99, 48, 97, 34, 44, 10, 9, 9, 9, 9, 9, 34, 48, 100, 98, 100, 99, 101, 97, 52, 53, 98, 99, 51, 102, 97, 57, 48, 57, 49, 53, 53, 49, 54, 57, 48, 98, 56, 57, 99, 97, 97, 56, 98, 99, 51, 50, 50, 53, 52, 54, 98, 55, 50, 102, 99, 54, 99, 55, 54, 54, 99, 99, 102, 97, 50, 98, 101, 54, 48, 53, 52, 55, 100, 101, 54, 34, 10, 9, 9, 9, 9, 93, 44, 10, 9, 9, 9, 9, 34, 116, 104, 114, 101, 115, 104, 111, 108, 100, 34, 58, 32, 50, 10, 9, 9, 9, 125, 10, 9, 9, 125, 44, 10, 9, 9, 34, 115, 112, 101, 99, 95, 118, 101, 114, 115, 105, 111, 110, 34, 58, 32, 34, 49, 46, 48, 34, 44, 10, 9, 9, 34, 118, 101, 114, 115, 105, 111, 110, 34, 58, 32, 49, 10, 9, 125];
-        let s = match std::str::from_utf8(&raw_json) {
+        let s_from_raw = match std::str::from_utf8(&raw_json) {
             Ok(v) => v,
             Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
         };
-        //println!("result: {:?}", raw_json);
-        println!("{:?}",s);
-       let msg = r#"{
-            "_type": "root",
-            "consistent_snapshot": true,
-            "expires": "2022-02-23T20:29:00Z",
-            "keys": {
-                "0dbdcea45bc3fa9091551690b89caa8bc322546b72fc6c766ccfa2be60547de6": {
-                    "keyid_hash_algorithms": [
-                        "sha256",
-                        "sha512"
-                    ],
-                    "keytype": "sigstore-oidc",
-                    "keyval": {
-                        "identity": "jyotsnap@bu.edu",
-                        "issuer": ""
-                    },
-                    "scheme": "https://fulcio.sigstore.dev"
-                },
-                "db379d3746fe29d97f8e2dee8381d535a4b579d3ecf619613738cf138dadec0a": {
-                    "keyid_hash_algorithms": [
-                        "sha256",
-                        "sha512"
-                    ],
-                    "keytype": "sigstore-oidc",
-                    "keyval": {
-                        "identity": "jpenumak@redhat.com",
-                        "issuer": ""
-                    },
-                    "scheme": "https://fulcio.sigstore.dev"
-                },
-                "e71beb853fb177ecd4248f1fe8c6e7c31476b8ff00842d53ecfff9332b7c70be": {
-                    "keyid_hash_algorithms": [
-                        "sha256",
-                        "sha512"
-                    ],
-                    "keytype": "sigstore-oidc",
-                    "keyval": {
-                        "identity": "lsturman@redhat.com",
-                        "issuer": ""
-                    },
-                    "scheme": "https://fulcio.sigstore.dev"
-                }
-            },
-            "namespace": "ghcr.io/jyotsna-penumaka/sigstore-kubecon",
-            "roles": {
-                "root": {
-                    "keyids": [
-                        "e71beb853fb177ecd4248f1fe8c6e7c31476b8ff00842d53ecfff9332b7c70be",
-                        "db379d3746fe29d97f8e2dee8381d535a4b579d3ecf619613738cf138dadec0a",
-                        "0dbdcea45bc3fa9091551690b89caa8bc322546b72fc6c766ccfa2be60547de6"
-                    ],
-                    "threshold": 2
-                }
-            },
-            "spec_version": "1.0",
-            "version": 1
-        }"#;
-        println!("{}",s);
-        assert_eq!(remove_whitespace(&s).as_bytes(),msg_bytes);
-        //let outcome = verify_signature(&pub_key.unwrap(),&signature,&msg);
-        //let outcome = verify_signature(&pub_key.unwrap(),&signature,&msg.as_bytes());
-        //let outcome = verify_signature(&pub_key.unwrap(),&signature,serde_json::to_string(&policy.signed).unwrap().as_bytes());
+        let s_from_msgbytes = match std::str::from_utf8(&msg_bytes) {
+            Ok(v) => v,
+            Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
+        };
+        
+        println!("string from raw json: {:?}\n\n",s_from_raw);
+        //println!("string from msg bytes: {:?}\n\n",s_from_msgbytes);
+        let split = s_from_raw.split("signed").collect::<Vec<&str>>()[1];
+        let split = &split[3..split.len() - 2];
+
+        let policy_string = serde_json::to_string(&policy).unwrap();
+        //println!("policy: {:?}\n\n", policy_string);
+        //println!("policy signatures: {:?}\n\n", serde_json::to_string(&policy.signatures).unwrap());
+        //println!("policy signed: {:?}\n\n", serde_json::to_string(&policy.signed).unwrap());
+
+//        let output = Output {
+//            info: (input.signatures, input.signed),
+//        };
+
+        let out = serde_json::to_string(&input).unwrap();
+
+        assert_eq!(split, input.signed.get());
+
+        //let split = policy_string.split("signed").collect::<Vec<&str>>()[1];
+        //let split = &split[3..split.len() - 2];
+
+        //let split = &split[3..split.len() - 2];
+        //println!("split: {:?}", &split[3..split.len() - 2]);
+        //println!("signed: {:?}", policy.signed);
+        
+        //let outcome = verify_signature(&pub_key.unwrap(), &signature, &split.as_bytes());
         //assert!(outcome.is_ok());
-        //assert_eq!(1,1);
+        //let outcome = verify_signature(&pub_key.unwrap(), &signature, &s_from_msgbytes.as_bytes());
+        //assert!(outcome.is_ok());
+        
+        let outcome = verify_signature(&pub_key.unwrap(), &signature, &input.signed.get().as_bytes());
+        assert!(outcome.is_ok());
+        //assert_eq!(0,1);
     }
 }

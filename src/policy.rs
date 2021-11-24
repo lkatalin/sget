@@ -18,21 +18,24 @@ pub struct Policy {
     // A list of signatures.
     pub signatures: Vec<Signature>,
     // The root policy that is signed.
-    pub signed: Root,
+    pub signed: Signed,
 }
 
+// This holds the raw data from a serialized policy, accessible via the
+// two fields. We must hold this data as RawValues in order for signature
+// verification to work.
 #[derive(Serialize, Deserialize)]
-struct Input<'a> {
+struct RawPolicy<'a> {
     #[serde(borrow)]
     pub signatures: &'a RawValue,
     #[serde(borrow)]
     pub signed: &'a RawValue,
 }
 
-#[derive(Serialize)]
-struct Output<'a> {
-    pub info: (&'a RawValue, &'a RawValue),
-}
+//#[derive(Serialize)]
+//struct Output<'a> {
+//    pub info: (&'a RawValue, &'a RawValue),
+//}
 
 // A signature and the key ID and certificate that made it.
 #[derive(Serialize, Deserialize, Debug)]
@@ -47,7 +50,7 @@ pub struct Signature {
 
 // The root policy indicated the trusted root keys.
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Root {
+pub struct Signed {
     pub consistent_snapshot: bool,
     pub expires: DateTime<Utc>,
     pub keys: HashMap<String, Key>,
@@ -56,25 +59,32 @@ pub struct Root {
     // The uncommended code will compile, but the unit test will fail because of the above
 //    pub roles: Vec<RoleKeys>,
 //    pub roles: HashMap<String, String>,
+    pub roles: HashMap<String, RoleData>,
     pub spec_version: String,
     pub version: NonZeroU64,
 }
 
 #[derive(PartialEq, Eq, Serialize, Deserialize, Debug)]
-pub struct RoleKeys {
+pub struct Role {
+    roletype: String,
+    data: RoleData
+}
+
+#[derive(PartialEq, Eq, Serialize, Deserialize, Debug)]
+pub struct RoleData {
     /// The key IDs used for the role.
-    pub keyids: HashMap<String, String>,
+    pub keyids: Vec<String>,
     /// The threshold of signatures required to validate the role.
     pub threshold: NonZeroU64,
 }
 
-//#[derive(PartialEq, Eq, Hash, Serialize, Deserialize, Debug)]
-///// The type of metadata role.
-//pub enum RoleType {
-//    /// The root role delegates trust to specific keys trusted for all other top-level roles used in
-//    /// the system.
-//    RootRole(RootRoleKeys),
-//}
+/*#[derive(PartialEq, Eq, Serialize, Deserialize, Debug)]
+/// The type of metadata role.
+pub enum Role {
+    /// The root role delegates trust to specific keys trusted for all other top-level roles used in
+    /// the system.
+    Root(String),
+}*/
 
 //derive_display_from_serialize!(RoleType);
 //derive_fromstr_from_deserialize!(RoleType);
@@ -184,7 +194,7 @@ mod tests {
         fixture.push("tests/test_data/policy_good.json");
         let raw_json = std::fs::read(fixture).expect("Cannot read test file");
         let policy: Policy = serde_json::from_slice(&raw_json).expect("Cannot deserialize Policy");
-        let input: Input = serde_json::from_slice(&raw_json).expect("Could not create Input");
+        let raw_policy: RawPolicy = serde_json::from_slice(&raw_json).expect("Could not create Raw Policy");
         let cert_64 = &policy.signatures[0].cert;
         let cert = base64::decode(cert_64).unwrap();
         let (_, pem) = parse_x509_pem(&cert)
@@ -218,9 +228,9 @@ mod tests {
 //            info: (input.signatures, input.signed),
 //        };
 
-        let out = serde_json::to_string(&input).unwrap();
+//        let out = serde_json::to_string(&input).unwrap();
 
-        assert_eq!(split, input.signed.get());
+//        assert_eq!(split, input.signed.get());
 
         //let split = policy_string.split("signed").collect::<Vec<&str>>()[1];
         //let split = &split[3..split.len() - 2];
@@ -234,7 +244,7 @@ mod tests {
         //let outcome = verify_signature(&pub_key.unwrap(), &signature, &s_from_msgbytes.as_bytes());
         //assert!(outcome.is_ok());
         
-        let outcome = verify_signature(&pub_key.unwrap(), &signature, &input.signed.get().as_bytes());
+        let outcome = verify_signature(&pub_key.unwrap(), &signature, &raw_policy.signed.get().as_bytes());
         assert!(outcome.is_ok());
         //assert_eq!(0,1);
     }
